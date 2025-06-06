@@ -1,0 +1,37 @@
+[package]
+name = "fit-rs"
+version = "0.1.0"
+edition = "2021"
+authors = ["Nithish Narasimman <nithish@octant.bio>"]
+license = "MIT"
+
+[[bin]]
+name = "fit-rs"
+path = "src/main.rs"
+
+[[bin]]
+name = "fit-server"
+path = "src/server.rs"
+
+[dependencies]
+rand = "0.8"
+rand_distr = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+csv = "1.3"
+clap = { version = "4.0", features = ["derive"] }
+anyhow = "1.0"
+plotters = "0.3"
+serde_json = "1.0"
+
+# Web server dependencies
+axum = {version = "0.7",features=["multipart"]}
+tokio = { version = "1.0", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tempfile = "3.0"
+
+[dev-dependencies]
+approx = "0.5"
+tempfile = "3.0"
