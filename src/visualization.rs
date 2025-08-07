@@ -1,7 +1,6 @@
-use crate::{BayesianEC50Fitter, DoseResponse, LL4Parameters, MCMCResult, ParameterSummary};
+use crate::{BayesianEC50Fitter, MCMCResult, ParameterSummary};
 use anyhow::Error;
 use plotters::prelude::*;
-use std::collections::HashMap;
 
 pub struct EC50Visualizer<'a> {
     fitter: &'a BayesianEC50Fitter,
@@ -735,6 +734,7 @@ impl BayesianEC50Fitter {
 mod tests {
     use super::*;
     use crate::{DoseResponse, LL4Parameters};
+    use rand::Rng;
 
     #[test]
     fn test_visualization() {
@@ -766,7 +766,7 @@ mod tests {
 
         // Fit and plot
         let fitter = BayesianEC50Fitter::new(data);
-        let result = fitter.fit_and_plot(500, 200, "test_output");
+        let result = fitter.fit_and_plot(500, 200, "test_output", None);
 
         assert!(result.is_ok());
     }
