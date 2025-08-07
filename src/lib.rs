@@ -4,9 +4,11 @@ use std::f64::consts::PI;
 pub mod io;
 pub mod visualization;
 pub mod stan_backend;
+pub mod config;
 
 use anyhow::Result;
 pub use stan_backend::{MCMCSampler, StanSampler, precompile_stan_model, force_recompile_stan_model};
+pub use config::Config;
 #[derive(Debug, Clone)]
 pub struct DoseResponse {
     pub concentration: f64,
