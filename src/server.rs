@@ -1,5 +1,5 @@
 use axum::{extract::Multipart, http::StatusCode, response::Json, routing::post, Router};
-use fit_rs::{io::load_csv, BayesianEC50Fitter, Prior, PriorType};
+use fit_rs::{io::load_csv, BayesianEC50Fitter, MCMCSampler, Prior, PriorType, StanSampler};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -27,6 +27,8 @@ struct FitRequest {
     chains: usize,
     #[serde(default = "default_sigma")]
     sigma: f64,
+    #[serde(default = "default_backend")]
+    backend: String,
 }
 
 fn default_samples() -> usize {
@@ -40,6 +42,9 @@ fn default_chains() -> usize {
 }
 fn default_sigma() -> f64 {
     0.05
+}
+fn default_backend() -> String {
+    "mh".to_string()
 }
 
 #[derive(Debug, Serialize)]
@@ -190,12 +195,13 @@ async fn process_fit_request(csv_data: Vec<u8>, params: FitRequest) -> Result<Fi
         params.burnin,
         priors,
         params.sigma,
+        &params.backend,
     )
     .map_err(|e| format!("MCMC fitting failed: {}", e))?;
 
     // Find best chain and calculate diagnostics
     let best_chain_idx = find_best_chain(&chain_results);
-    let (best_result, best_summary) = &chain_results[best_chain_idx];
+    let (_best_result, best_summary) = &chain_results[best_chain_idx];
 
     // Calculate R-hat for all parameters
     let rhat_estimates = calculate_rhat_diagnostics(&chain_results);
@@ -272,16 +278,38 @@ fn run_multiple_chains(
     burnin: usize,
     priors: Prior,
     sigma: f64,
+    backend: &str,
 ) -> Result<Vec<(fit_rs::MCMCResult, fit_rs::ParameterSummary)>, String> {
     let mut all_results = Vec::new();
 
     for _chain_id in 0..n_chains {
-        let fitter = BayesianEC50Fitter::new(data.clone())
-            .with_prior(priors.clone())
-            .with_sigma(sigma);
+        let (result, summary) = match backend {
+            "stan" => {
+                let stan_sampler = StanSampler::new(data.clone(), priors.clone())
+                    .map_err(|e| format!("Failed to create Stan sampler: {}", e))?;
+                let result = stan_sampler.fit(n_samples, burnin, Some(1))
+                    .map_err(|e| format!("Stan fitting failed: {}", e))?;
+                
+                // Create a temporary fitter just for summarizing results
+                let temp_fitter = BayesianEC50Fitter::new(data.clone())
+                    .with_prior(priors.clone())
+                    .with_sigma(sigma);
+                let summary = temp_fitter.summarize_results(&result);
+                
+                (result, summary)
+            }
+            _ => {
+                // Default to Metropolis-Hastings
+                let fitter = BayesianEC50Fitter::new(data.clone())
+                    .with_prior(priors.clone())
+                    .with_sigma(sigma);
 
-        let result = fitter.fit(n_samples, burnin);
-        let summary = fitter.summarize_results(&result);
+                let result = fitter.fit(n_samples, burnin);
+                let summary = fitter.summarize_results(&result);
+                
+                (result, summary)
+            }
+        };
 
         all_results.push((result, summary));
     }

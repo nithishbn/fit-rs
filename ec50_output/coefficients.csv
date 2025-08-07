@@ -1,0 +1,8 @@
+parameter,mean,median,std,ci_lower,ci_upper,description
+emin,0.160167,0.160113,0.006951,0.146267,0.173507,"Lower asymptote (baseline response)"
+emax,4.075667,4.080931,1.331492,1.535666,6.533748,"Upper asymptote (maximum response)"
+ec50_log10,-2.194727,-2.214142,0.418984,-2.910617,-1.303751,"EC50 on log10 scale"
+ec50_linear,6.386646e-3,6.107424e-3,4.845915e-2,1.228521e-3,4.968767e-2,"EC50 on linear scale (concentration units)"
+hillslope,3.008293,2.941521,0.523418,2.126058,4.137567,"Hill slope (steepness of curve)"
+acceptance_rate,0.087038,0.087038,0.000000,0.087038,0.087038,"MCMC acceptance rate"
+effective_sample_size,2089,2089,0,2089,2089,"Effective number of independent samples"

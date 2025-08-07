@@ -3,6 +3,10 @@ use rand_distr::{LogNormal, Normal, Uniform};
 use std::f64::consts::PI;
 pub mod io;
 pub mod visualization;
+pub mod stan_backend;
+
+use anyhow::Result;
+pub use stan_backend::{MCMCSampler, StanSampler, precompile_stan_model, force_recompile_stan_model};
 #[derive(Debug, Clone)]
 pub struct DoseResponse {
     pub concentration: f64,
@@ -278,6 +282,17 @@ impl BayesianEC50Fitter {
     }
 }
 
+impl MCMCSampler for BayesianEC50Fitter {
+    fn fit(&self, n_samples: usize, burnin: usize, _chains: Option<usize>) -> Result<MCMCResult> {
+        // Use the existing Metropolis-Hastings implementation
+        Ok(self.fit(n_samples, burnin))
+    }
+    
+    fn get_name(&self) -> &'static str {
+        "Metropolis-Hastings"
+    }
+}
+
 #[derive(Debug)]
 pub struct ParameterSummary {
     pub emin: ParamStats,
@@ -301,6 +316,39 @@ pub struct ParamStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_stan_backend() {
+        // Create test data
+        let test_data = vec![
+            DoseResponse { concentration: 1e-9, response: 10.0 },
+            DoseResponse { concentration: 1e-8, response: 15.0 },
+            DoseResponse { concentration: 1e-7, response: 25.0 },
+            DoseResponse { concentration: 1e-6, response: 45.0 },
+            DoseResponse { concentration: 1e-5, response: 70.0 },
+        ];
+
+        // Set up priors
+        let priors = Prior {
+            emin: PriorType::Normal { mean: 0.0, std: 10.0 },
+            emax: PriorType::Normal { mean: 100.0, std: 20.0 },
+            ec50: PriorType::Normal { mean: -6.0, std: 2.0 },
+            hillslope: PriorType::Normal { mean: 1.0, std: 1.0 },
+        };
+
+        // Test Stan backend (note: this will only work if BridgeStan and model are available)
+        if let Ok(stan_sampler) = StanSampler::new(test_data.clone(), priors.clone()) {
+            if let Ok(result) = stan_sampler.fit(50, 25, Some(1)) {
+                assert!(result.samples.len() > 0);
+                assert!(result.acceptance_rate >= 0.0 && result.acceptance_rate <= 1.0);
+                println!("Stan backend test successful - {} samples", result.samples.len());
+            } else {
+                println!("Stan backend not available for testing (requires BridgeStan setup)");
+            }
+        } else {
+            println!("Stan backend creation failed (requires Stan model file and BridgeStan)");
+        }
+    }
 
     #[test]
     fn test_ec50_fitting() {

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use fit_rs::{io::load_csv, BayesianEC50Fitter, Prior, PriorType};
+use fit_rs::{io::load_csv, BayesianEC50Fitter, MCMCSampler, Prior, PriorType, StanSampler};
 
 #[derive(Parser)]
 #[command(name = "ec50-fit")]
@@ -86,6 +86,10 @@ struct Cli {
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
+
+    /// MCMC Backend ('mh' for Metropolis-Hastings, 'stan' for Stan/BridgeStan)
+    #[arg(long, default_value = "mh")]
+    backend: String,
 }
 
 fn main() -> Result<()> {
@@ -184,6 +188,7 @@ fn main() -> Result<()> {
         args.burnin,
         priors,
         args.sigma,
+        &args.backend,
         args.verbose,
     )?;
 
@@ -240,6 +245,7 @@ fn run_multiple_chains_improved(
     burnin: usize,
     priors: Prior,
     sigma: f64,
+    backend: &str,
     verbose: bool,
 ) -> Result<Vec<(fit_rs::MCMCResult, fit_rs::ParameterSummary)>> {
     let mut all_results = Vec::new();
@@ -252,12 +258,39 @@ fn run_multiple_chains_improved(
             std::io::Write::flush(&mut std::io::stdout()).unwrap();
         }
 
-        let fitter = BayesianEC50Fitter::new(data.clone())
-            .with_prior(priors.clone())
-            .with_sigma(sigma);
-
-        let result = fitter.fit(n_samples, burnin);
-        let summary = fitter.summarize_results(&result);
+        let (result, summary) = match backend {
+            "stan" => {
+                let stan_sampler = StanSampler::new(data.clone(), priors.clone())?;
+                let result = stan_sampler.fit(n_samples, burnin, Some(1))?;
+                
+                // Create a temporary fitter just for summarizing results
+                let temp_fitter = BayesianEC50Fitter::new(data.clone())
+                    .with_prior(priors.clone())
+                    .with_sigma(sigma);
+                let summary = temp_fitter.summarize_results(&result);
+                
+                if verbose {
+                    println!("  Using {} backend", stan_sampler.get_name());
+                }
+                
+                (result, summary)
+            }
+            _ => {
+                // Default to Metropolis-Hastings
+                let fitter = BayesianEC50Fitter::new(data.clone())
+                    .with_prior(priors.clone())
+                    .with_sigma(sigma);
+                
+                let result = fitter.fit(n_samples, burnin);
+                let summary = fitter.summarize_results(&result);
+                
+                if verbose {
+                    println!("  Using {} backend", fitter.get_name());
+                }
+                
+                (result, summary)
+            }
+        };
 
         if verbose {
             println!("  Acceptance rate: {:.1}%", summary.acceptance_rate * 100.0);

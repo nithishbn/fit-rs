@@ -1,0 +1,56 @@
+{
+  "diagnostics": {
+    "convergence_warnings": [
+      "Low acceptance rate (8.7%) - consider adjusting priors or proposal distribution",
+      "Unusual Hill slope estimate (3.01) - check model fit"
+    ],
+    "model_quality": "Fair - Minor issues detected"
+  },
+  "model_info": {
+    "acceptance_rate": 0.08703846153846154,
+    "effective_sample_size": 2088.9230769230767,
+    "formula": "response ~ (emin + (emax - emin) / (1 + 10**(hillslope * (ec50 - log_concentration))))",
+    "n_samples": 24000
+  },
+  "parameters": {
+    "ec50_linear": {
+      "ci_lower": 0.0012285213023229707,
+      "ci_upper": 0.04968767462767683,
+      "description": "EC50 on linear scale (concentration units)",
+      "mean": 0.006386646399969607,
+      "median": 0.006107423773923471
+    },
+    "ec50_log10": {
+      "ci_lower": -2.9106173085358678,
+      "ci_upper": -1.303751327665806,
+      "description": "EC50 on log10 scale",
+      "mean": -2.1947271281183682,
+      "median": -2.2141419447018036,
+      "std": 0.4189835834552851
+    },
+    "emax": {
+      "ci_lower": 1.5356662448963152,
+      "ci_upper": 6.533747721351062,
+      "description": "Upper asymptote (maximum response)",
+      "mean": 4.075667193277027,
+      "median": 4.080931452822446,
+      "std": 1.33149240912061
+    },
+    "emin": {
+      "ci_lower": 0.14626743916163024,
+      "ci_upper": 0.1735067220281373,
+      "description": "Lower asymptote (baseline response)",
+      "mean": 0.160167318439671,
+      "median": 0.16011254067750294,
+      "std": 0.00695088709765408
+    },
+    "hillslope": {
+      "ci_lower": 2.126058100833069,
+      "ci_upper": 4.137566728152252,
+      "description": "Hill slope (steepness of curve)",
+      "mean": 3.0082928147306913,
+      "median": 2.9415205581993136,
+      "std": 0.5234180324324652
+    }
+  }
+}
