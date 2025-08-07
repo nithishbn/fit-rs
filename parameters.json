@@ -1,0 +1,61 @@
+{
+  "input": {
+    "file": "data/fp.csv",
+    "output_dir": "fp_ec50_output"
+  },
+  "mcmc": {
+    "samples": 4000,
+    "burnin": 1000,
+    "chains": 2,
+    "sigma": 0.05,
+    "backend": "stan"
+  },
+  "priors": {
+    "emin": {
+      "type": "normal",
+      "mean": 1.0,
+      "std": 10.0,
+      "min": null,
+      "max": null,
+      "description": "Lower asymptote (baseline response)"
+    },
+    "emax": {
+      "type": "normal",
+      "mean": 55,
+      "std": 20.0,
+      "min": null,
+      "max": null,
+      "description": "Upper asymptote (maximum response)"
+    },
+    "ec50": {
+      "type": "normal",
+      "mean": -6.0,
+      "std": 2.0,
+      "min": null,
+      "max": null,
+      "description": "EC50 on log10 scale"
+    },
+    "hillslope": {
+      "type": "normal",
+      "mean": 1.0,
+      "std": 1.0,
+      "min": null,
+      "max": null,
+      "description": "Hill slope (steepness of curve)"
+    }
+  },
+  "plotting": {
+    "bounds": {
+      "x_min": null,
+      "x_max": null,
+      "y_min": null,
+      "y_max": null
+    },
+    "verbose": true
+  },
+  "metadata": {
+    "description": "EC50 curve fitting configuration",
+    "version": "1.0",
+    "created": "2025-08-07T21:22:24.019951+00:00"
+  }
+}
