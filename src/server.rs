@@ -1,5 +1,5 @@
 use axum::{extract::Multipart, http::StatusCode, response::Json, routing::post, Router};
-use fit_rs::{io::load_csv, BayesianEC50Fitter, MCMCSampler, Prior, PriorType, StanSampler};
+use fit_rs::{io::load_csv, BayesianEC50Fitter, MCMCSampler, Prior, PriorType, StanSampler, Config};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -7,28 +7,34 @@ use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 
 #[derive(Debug, Deserialize)]
-struct FitRequest {
-    // Prior parameters
-    emin_mean: f64,
-    emin_std: f64,
-    emax_mean: f64,
-    emax_std: f64,
-    ec50_mean: f64,
-    ec50_std: f64,
-    hillslope_mean: f64,
-    hillslope_std: f64,
+#[serde(untagged)]
+enum FitRequest {
+    // Legacy format for backward compatibility
+    Legacy {
+        // Prior parameters
+        emin_mean: f64,
+        emin_std: f64,
+        emax_mean: f64,
+        emax_std: f64,
+        ec50_mean: f64,
+        ec50_std: f64,
+        hillslope_mean: f64,
+        hillslope_std: f64,
 
-    // MCMC parameters
-    #[serde(default = "default_samples")]
-    samples: usize,
-    #[serde(default = "default_burnin")]
-    burnin: usize,
-    #[serde(default = "default_chains")]
-    chains: usize,
-    #[serde(default = "default_sigma")]
-    sigma: f64,
-    #[serde(default = "default_backend")]
-    backend: String,
+        // MCMC parameters
+        #[serde(default = "default_samples")]
+        samples: usize,
+        #[serde(default = "default_burnin")]
+        burnin: usize,
+        #[serde(default = "default_chains")]
+        chains: usize,
+        #[serde(default = "default_sigma")]
+        sigma: f64,
+        #[serde(default = "default_backend")]
+        backend: String,
+    },
+    // New JSON config format
+    JsonConfig(Config),
 }
 
 fn default_samples() -> usize {
@@ -124,7 +130,7 @@ async fn fit_curve(mut multipart: Multipart) -> Result<Json<FitResponse>, Status
                 let data = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?;
                 csv_data = Some(data.to_vec());
             }
-            "parameters" => {
+            "parameters" | "config" => {
                 let data = field.text().await.map_err(|_| StatusCode::BAD_REQUEST)?;
                 fit_params = serde_json::from_str(&data).map_err(|_| StatusCode::BAD_REQUEST)?;
             }
@@ -167,35 +173,49 @@ async fn process_fit_request(csv_data: Vec<u8>, params: FitRequest) -> Result<Fi
         return Err("No valid data points found in CSV".to_string());
     }
 
-    // Set up priors
-    let priors = Prior {
-        emin: PriorType::Normal {
-            mean: params.emin_mean,
-            std: params.emin_std,
+    // Extract parameters based on request type
+    let (priors, mcmc_config) = match params {
+        FitRequest::Legacy {
+            emin_mean, emin_std, emax_mean, emax_std,
+            ec50_mean, ec50_std, hillslope_mean, hillslope_std,
+            samples, burnin, chains, sigma, backend
+        } => {
+            let priors = Prior {
+                emin: PriorType::Normal { mean: emin_mean, std: emin_std },
+                emax: PriorType::Normal { mean: emax_mean, std: emax_std },
+                ec50: PriorType::Normal { mean: ec50_mean, std: ec50_std },
+                hillslope: PriorType::Normal { mean: hillslope_mean, std: hillslope_std },
+            };
+            let mcmc_config = (samples, burnin, chains, sigma, backend);
+            (priors, mcmc_config)
         },
-        emax: PriorType::Normal {
-            mean: params.emax_mean,
-            std: params.emax_std,
-        },
-        ec50: PriorType::Normal {
-            mean: params.ec50_mean,
-            std: params.ec50_std,
-        },
-        hillslope: PriorType::Normal {
-            mean: params.hillslope_mean,
-            std: params.hillslope_std,
-        },
+        FitRequest::JsonConfig(config) => {
+            // Validate the config
+            config.validate().map_err(|e| format!("Invalid configuration: {}", e))?;
+            
+            let priors = config.to_prior().map_err(|e| format!("Failed to convert priors: {}", e))?;
+            let mcmc_config = (
+                config.mcmc.samples,
+                config.mcmc.burnin,
+                config.mcmc.chains,
+                config.mcmc.sigma,
+                config.mcmc.backend
+            );
+            (priors, mcmc_config)
+        }
     };
+
+    let (samples, burnin, chains, sigma, backend) = mcmc_config;
 
     // Run multiple chains
     let chain_results = run_multiple_chains(
         data.clone(),
-        params.chains,
-        params.samples,
-        params.burnin,
+        chains,
+        samples,
+        burnin,
         priors,
-        params.sigma,
-        &params.backend,
+        sigma,
+        &backend,
     )
     .map_err(|e| format!("MCMC fitting failed: {}", e))?;
 
@@ -212,9 +232,9 @@ async fn process_fit_request(csv_data: Vec<u8>, params: FitRequest) -> Result<Fi
         error: None,
         model_info: Some(ModelInfo {
             formula: "response ~ (emin + (emax - emin) / (1 + 10**(hillslope * (ec50 - log_concentration))))".to_string(),
-            n_samples_per_chain: params.samples,
-            n_chains: params.chains,
-            total_samples: params.samples * params.chains,
+            n_samples_per_chain: samples,
+            n_chains: chains,
+            total_samples: samples * chains,
             data_points: data.len(),
         }),
         parameters: Some(Parameters {
