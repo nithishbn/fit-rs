@@ -5,10 +5,12 @@ pub mod io;
 pub mod visualization;
 pub mod stan_backend;
 pub mod config;
+pub mod tui_plot;
 
 use anyhow::Result;
 pub use stan_backend::{MCMCSampler, StanSampler, precompile_stan_model, force_recompile_stan_model};
 pub use config::Config;
+pub use tui_plot::TuiPlotter;
 #[derive(Debug, Clone)]
 pub struct DoseResponse {
     pub concentration: f64,
@@ -38,7 +40,7 @@ pub enum PriorType {
     Uniform { min: f64, max: f64 },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MCMCResult {
     pub samples: Vec<LL4Parameters>,
     pub acceptance_rate: f64,
@@ -91,7 +93,7 @@ impl BayesianEC50Fitter {
     }
 
     /// 4-parameter logistic function
-    fn ll4_model(&self, concentration: f64, params: &LL4Parameters) -> f64 {
+    pub fn ll4_model(&self, concentration: f64, params: &LL4Parameters) -> f64 {
         let log_conc = concentration.log10();
         params.emin
             + (params.emax - params.emin)
@@ -295,7 +297,7 @@ impl MCMCSampler for BayesianEC50Fitter {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParameterSummary {
     pub emin: ParamStats,
     pub emax: ParamStats,
@@ -305,7 +307,7 @@ pub struct ParameterSummary {
     pub acceptance_rate: f64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParamStats {
     pub mean: f64,
     pub median: f64,

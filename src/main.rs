@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use fit_rs::{io::load_csv, BayesianEC50Fitter, MCMCSampler, StanSampler, Config};
+use fit_rs::{io::load_csv, BayesianEC50Fitter, MCMCSampler, StanSampler, Config, TuiPlotter};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -51,6 +51,10 @@ struct Cli {
     /// Print configuration summary and exit
     #[arg(long)]
     show_config: bool,
+
+    /// Launch interactive terminal plotting interface
+    #[arg(long)]
+    interactive: bool,
 }
 
 fn main() -> Result<()> {
@@ -140,19 +144,36 @@ fn main() -> Result<()> {
     // Load data again for plotting
     let plot_data = load_csv(&config.input.file)?;
     let plot_fitter = BayesianEC50Fitter::new(plot_data)
-        .with_prior(prior)
+        .with_prior(prior.clone())
         .with_sigma(config.mcmc.sigma);
 
-    // Generate plots
-    println!("Generating diagnostic plots...");
-    let visualizer = fit_rs::visualization::EC50Visualizer::new(&plot_fitter);
-    visualizer.generate_all_plots(best_result, best_summary, &config.input.output_dir.to_string_lossy(), bounds)?;
+    // Generate plots or launch interactive interface
+    if args.interactive {
+        println!("Launching interactive terminal plotting interface...");
+        println!("Press 'h' for help, 'q' to quit");
+        
+        let plot_data_copy = load_csv(&config.input.file)?;
+        let plot_fitter_copy = BayesianEC50Fitter::new(plot_data_copy.clone())
+            .with_prior(prior.clone())
+            .with_sigma(config.mcmc.sigma);
+        
+        let tui_plotter = TuiPlotter::new(plot_fitter_copy, plot_data_copy)
+            .with_results(best_result.clone(), best_summary.clone());
+        
+        tui_plotter.run_interactive_plot()?;
+    } else {
+        println!("Generating diagnostic plots...");
+        let visualizer = fit_rs::visualization::EC50Visualizer::new(&plot_fitter);
+        visualizer.generate_all_plots(best_result, best_summary, &config.input.output_dir.to_string_lossy(), bounds)?;
+    }
 
     // Calculate and display R-hat diagnostics
-    calculate_rhat_improved(&chain_results);
+    if !args.interactive {
+        calculate_rhat_improved(&chain_results);
 
-    // Display final results
-    display_final_results(best_summary, &config.input.output_dir.to_string_lossy());
+        // Display final results
+        display_final_results(best_summary, &config.input.output_dir.to_string_lossy());
+    }
 
     Ok(())
 }
