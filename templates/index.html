@@ -47,56 +47,35 @@
         <div class="row mt-3">
             <!-- Left Column: Compact File Uploads -->
             <div class="col-lg-3">
-                <!-- Data Upload -->
+                <!-- Combined File Upload -->
                 <div class="mb-3">
-                    <form hx-post="/upload-data" 
-                          hx-target="#data-status" 
+                    <form hx-post="/upload-files" 
+                          hx-target="#upload-status" 
                           hx-encoding="multipart/form-data"
-                          hx-indicator="#data-loading">
-                        <label for="data_file" class="form-label small fw-bold">Data CSV</label>
+                          hx-indicator="#upload-loading">
+                        <label for="files" class="form-label small fw-bold">Files</label>
                         <input type="file" 
                                class="form-control form-control-sm" 
-                               id="data_file" 
-                               name="data_file" 
-                               accept=".csv" 
+                               id="files" 
+                               name="files" 
+                               accept=".csv,.json" 
+                               multiple
                                required>
+                        <small class="form-text text-muted">Upload CSV data and JSON config</small>
                         <button type="submit" class="btn btn-primary btn-sm mt-1 w-100">
-                            <span class="htmx-indicator spinner-border spinner-border-sm me-1" id="data-loading"></span>
-                            Upload
+                            <span class="htmx-indicator spinner-border spinner-border-sm me-1" id="upload-loading"></span>
+                            Upload Files
                         </button>
                     </form>
-                    <div id="data-status" class="mt-1">
-                        {% if has_data %}
-                            <small class="text-success">✅ Data loaded</small>
+                    <div id="upload-status" class="mt-1">
+                        {% if has_data && has_config %}
+                            <small class="text-success">✅ Data & Config loaded</small>
+                        {% else if has_data %}
+                            <small class="text-warning">⚠️ Data loaded, need config</small>
+                        {% else if has_config %}
+                            <small class="text-warning">⚠️ Config loaded, need data</small>
                         {% else %}
-                            <small class="text-muted">No data</small>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <!-- Config Upload -->
-                <div class="mb-3">
-                    <form hx-post="/upload-config" 
-                          hx-target="#config-status" 
-                          hx-encoding="multipart/form-data"
-                          hx-indicator="#config-loading">
-                        <label for="config_file" class="form-label small fw-bold">Parameters JSON</label>
-                        <input type="file" 
-                               class="form-control form-control-sm" 
-                               id="config_file" 
-                               name="config_file" 
-                               accept=".json" 
-                               required>
-                        <button type="submit" class="btn btn-primary btn-sm mt-1 w-100">
-                            <span class="htmx-indicator spinner-border spinner-border-sm me-1" id="config-loading"></span>
-                            Upload
-                        </button>
-                    </form>
-                    <div id="config-status" class="mt-1">
-                        {% if has_config %}
-                            <small class="text-success">✅ Config loaded</small>
-                        {% else %}
-                            <small class="text-muted">No config</small>
+                            <small class="text-muted">No files uploaded</small>
                         {% endif %}
                     </div>
                 </div>
@@ -116,17 +95,16 @@
 
             <!-- Right Column: Plot and Results -->
             <div class="col-lg-9">
-                {% if has_data %}
-                {% if plot_data.is_some() %}
-                <div id="plot-container" class="plot-container">
-                    <img src="data:image/png;base64,{{ plot_data.as_ref().unwrap() }}" alt="Data Plot" class="img-fluid">
+                <!-- Main Plot Container -->
+                <div id="main-plot-container">
+                    {% if has_data %}
+                    {% if plot_data.is_some() %}
+                    <div class="plot-container">
+                        <img src="data:image/png;base64,{{ plot_data.as_ref().unwrap() }}" alt="Data Plot" class="img-fluid">
+                    </div>
+                    {% endif %}
+                    {% endif %}
                 </div>
-                {% endif %}
-                {% endif %}
-
-
-                <!-- Results Container -->
-                <div id="results-container"></div>
             </div>
         </div>
     </div>

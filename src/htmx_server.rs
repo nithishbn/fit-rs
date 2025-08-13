@@ -1,4 +1,4 @@
-use askama::{Template};
+use askama::Template;
 use axum::{
     extract::{Multipart, State},
     http::header,
@@ -105,6 +105,109 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
     };
     
     Html(template.render().unwrap())
+}
+
+async fn upload_files(State(state): State<AppState>, mut multipart: Multipart) -> impl IntoResponse {
+    let mut csv_data: Option<Vec<u8>> = None;
+    let mut config_data: Option<String> = None;
+    let mut data_loaded = false;
+    let mut config_loaded = false;
+
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        let name = field.name().unwrap_or("").to_string();
+        
+        if name == "files" {
+            let filename = field.file_name().unwrap_or("").to_string();
+            let data = field.bytes().await.unwrap();
+            
+            if filename.ends_with(".csv") {
+                csv_data = Some(data.to_vec());
+            } else if filename.ends_with(".json") {
+                config_data = Some(String::from_utf8_lossy(&data).to_string());
+            }
+        }
+    }
+
+    let mut responses = Vec::new();
+
+    // Process CSV data if uploaded
+    if let Some(csv_bytes) = csv_data {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(&csv_bytes).unwrap();
+        
+        match load_csv(temp_file.path()) {
+            Ok(parsed_data) => {
+                *state.data.write().await = Some(parsed_data.clone());
+                data_loaded = true;
+                
+                // Generate initial plot and update main plot container
+                let plot_data = generate_data_plot(&parsed_data).await.unwrap_or_else(|e| {
+                    eprintln!("Error generating plot: {}", e);
+                    String::new()
+                });
+                
+                if !plot_data.is_empty() {
+                    responses.push(format!(
+                        r#"<div hx-swap-oob="innerHTML:#main-plot-container">
+                            <div class="plot-container">
+                                <img src="data:image/png;base64,{}" alt="Data Plot" class="img-fluid">
+                            </div>
+                        </div>"#,
+                        plot_data
+                    ));
+                }
+            }
+            Err(e) => {
+                responses.push(format!("❌ Error parsing CSV: {}", e));
+            }
+        }
+    }
+
+    // Process JSON config if uploaded
+    if let Some(json_data) = config_data {
+        match serde_json::from_str::<Config>(&json_data) {
+            Ok(config) => {
+                if let Err(e) = config.validate() {
+                    responses.push(format!("❌ Invalid config: {}", e));
+                } else {
+                    *state.config.write().await = Some(config.clone());
+                    config_loaded = true;
+                }
+            }
+            Err(e) => {
+                responses.push(format!("❌ Error parsing JSON: {}", e));
+            }
+        }
+    }
+
+    // Update status and trigger parameter form load if both files uploaded
+    let status_html = if data_loaded && config_loaded {
+        "<small class=\"text-success\">✅ Data & Config loaded</small>\n        <div hx-get=\"/parameter-form\" hx-target=\"#parameter-form-container\" hx-trigger=\"load\"></div>".to_string()
+    } else if data_loaded {
+        r#"<small class="text-warning">⚠️ Data loaded, need config</small>"#.to_string()
+    } else if config_loaded {
+        r#"<small class="text-warning">⚠️ Config loaded, need data</small>"#.to_string()
+    } else {
+        r#"<small class="text-danger">❌ No valid files uploaded</small>"#.to_string()
+    };
+
+    // Return combined response targeting both plot area and status
+    let combined_response = if !responses.is_empty() && data_loaded {
+        format!(
+            r#"<div hx-swap-oob="innerHTML:#upload-status">{}</div>
+            <div hx-swap-oob="innerHTML:#parameter-form-container">
+                {}
+            </div>
+            {}"#,
+            status_html,
+            if config_loaded { r#"<div hx-get="/parameter-form" hx-trigger="load"></div>"# } else { "" },
+            responses.join("")
+        )
+    } else {
+        format!(r#"<div hx-swap-oob="innerHTML:#upload-status">{}</div>"#, status_html)
+    };
+
+    Html(combined_response)
 }
 
 async fn upload_data(State(state): State<AppState>, mut multipart: Multipart) -> impl IntoResponse {
@@ -435,7 +538,7 @@ async fn generate_data_plot(data: &[DoseResponse]) -> Result<String, Box<dyn std
 
 async fn generate_fitted_plot(
     data: &[DoseResponse],
-    _results: &fit_rs::MCMCResult,
+    results: &fit_rs::MCMCResult,
     summary: &fit_rs::ParameterSummary,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let temp_file = tempfile::NamedTempFile::with_suffix(".png")?;
@@ -468,26 +571,73 @@ async fn generate_fitted_plot(
             .y_desc("Response")
             .draw()?;
         
-        // Generate fitted curve
-        let params = LL4Parameters {
+        // Generate fitted curve using mean parameters
+        let params_mean = LL4Parameters {
             emin: summary.emin.mean,
             emax: summary.emax.mean,
             ec50: summary.ec50.mean,
             hillslope: summary.hillslope.mean,
         };
         
-        let curve_points: Vec<(f64, f64)> = (0..200)
-            .map(|i| {
-                let log_conc = x_min + (x_max - x_min) * i as f64 / 199.0;
+        let x_points: Vec<f64> = (0..100)
+            .map(|i| x_min + (x_max - x_min) * i as f64 / 99.0)
+            .collect();
+        
+        let curve_points: Vec<(f64, f64)> = x_points
+            .iter()
+            .map(|&log_conc| {
                 let conc = 10.0_f64.powf(log_conc);
-                let response = ll4_model(conc, &params);
+                let response = ll4_model(conc, &params_mean);
                 (log_conc, response)
             })
             .collect();
         
-        // Draw fitted curve
-        chart.draw_series(LineSeries::new(curve_points.iter().cloned(), &RED))?
-            .label("Fitted Curve")
+        // Generate confidence bands using MCMC samples
+        // Sample every 10th sample to reduce computation
+        let sample_step = (results.samples.len() / 100).max(1);
+        let mut curve_predictions: Vec<Vec<f64>> = vec![Vec::new(); x_points.len()];
+        
+        for (i, sample) in results.samples.iter().step_by(sample_step).enumerate() {
+            if i >= 50 { break; } // Limit to 50 samples for performance
+            
+            for (j, &log_conc) in x_points.iter().enumerate() {
+                let conc = 10.0_f64.powf(log_conc);
+                let response = ll4_model(conc, sample);
+                curve_predictions[j].push(response);
+            }
+        }
+        
+        // Calculate percentiles for confidence bands
+        let mut upper_bounds = Vec::new();
+        let mut lower_bounds = Vec::new();
+        
+        for (i, predictions) in curve_predictions.iter().enumerate() {
+            if !predictions.is_empty() {
+                let mut sorted_predictions = predictions.clone();
+                sorted_predictions.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                
+                let lower_idx = (sorted_predictions.len() as f64 * 0.025) as usize;
+                let upper_idx = (sorted_predictions.len() as f64 * 0.975) as usize;
+                
+                upper_bounds.push((x_points[i], sorted_predictions[upper_idx.min(sorted_predictions.len() - 1)]));
+                lower_bounds.push((x_points[i], sorted_predictions[lower_idx]));
+            }
+        }
+        
+        // Draw confidence bands
+        if !upper_bounds.is_empty() && !lower_bounds.is_empty() {
+            let confidence_area: Vec<(f64, f64)> = lower_bounds.iter().cloned()
+                .chain(upper_bounds.iter().rev().cloned())
+                .collect();
+            
+            chart.draw_series(std::iter::once(Polygon::new(confidence_area, RED.mix(0.15).filled())))?
+                .label("95% Confidence")
+                .legend(|(x, y)| Rectangle::new([(x, y), (x + 10, y + 5)], RED.mix(0.15).filled()));
+        }
+        
+        // Draw fitted curve (mean)
+        chart.draw_series(LineSeries::new(curve_points.iter().cloned(), RED.stroke_width(2)))?
+            .label("Best Fit")
             .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], RED));
         
         // Draw data points
@@ -562,6 +712,7 @@ async fn main() {
     
     let app = Router::new()
         .route("/", get(index))
+        .route("/upload-files", post(upload_files))
         .route("/upload-data", post(upload_data))
         .route("/upload-config", post(upload_config))
         .route("/parameter-form", get(parameter_form))
