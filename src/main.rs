@@ -157,7 +157,7 @@ fn main() -> Result<()> {
             .with_prior(prior.clone())
             .with_sigma(config.mcmc.sigma);
         
-        let tui_plotter = TuiPlotter::new(plot_fitter_copy, plot_data_copy)
+        let mut tui_plotter = TuiPlotter::new(plot_fitter_copy, plot_data_copy)
             .with_results(best_result.clone(), best_summary.clone());
         
         tui_plotter.run_interactive_plot()?;

@@ -157,6 +157,19 @@ impl<'a> EC50Visualizer<'a> {
             .label("Observed Data")
             .legend(|(x, y)| Circle::new((x + 5, y), 5, RED.filled()));
 
+        // Add EC50 vertical line
+        if let Some(params) = result.samples.first() {
+            let ec50_conc = 10.0_f64.powf(params.ec50);
+            let ec50_line_points = vec![(ec50_conc, y_min), (ec50_conc, y_max)];
+            chart
+                .draw_series(LineSeries::new(
+                    ec50_line_points,
+                    MAGENTA.stroke_width(2)
+                ))?
+                .label("EC50")
+                .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], &MAGENTA));
+        }
+
         chart.configure_series_labels().draw()?;
         root.present()?;
 
