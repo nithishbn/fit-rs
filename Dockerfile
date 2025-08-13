@@ -1,3 +1,4 @@
+# Multi-stage Dockerfile for EC50 Curve Fitting HTMX Server
 FROM lukemathwalker/cargo-chef:latest-rust-1 AS chef
 WORKDIR /app
 
@@ -6,23 +7,57 @@ COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
+
+# Install additional build dependencies for HTMX server
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    clang \
+    libclang-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=planner /app/recipe.json recipe.json
 # Build dependencies - this is the caching Docker layer!
 RUN cargo chef cook --release --recipe-path recipe.json
+
 # Build application
 COPY . .
 RUN cargo build --release --bin fit-server
 
-
-# We do not need the Rust toolchain to run the binary!
+# Production stage
 FROM debian:bookworm-slim AS runtime
-WORKDIR /app
 
+# Install minimal runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libssl3 \
     libfontconfig1 \
     libfreetype6 \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/fit-server /app/
+# Create app user for security
+RUN useradd -r -s /bin/false appuser
+
+WORKDIR /app
+
+# Copy the binary from builder stage
+COPY --from=builder /app/target/release/fit-server /app/fit-server
+
+# Create directory for temporary files and set permissions
+RUN mkdir -p /tmp/fitrs && chown -R appuser:appuser /tmp/fitrs /app
+
+# Switch to non-root user
+USER appuser
+
+# Expose port 3000 for fit-server
 EXPOSE 3000
+
+# Health check can be added later with external monitoring
+
+# Set environment variables
+ENV RUST_LOG=info
+ENV TMPDIR=/tmp/fitrs
+
+# Run the fit-server
 ENTRYPOINT ["/app/fit-server"]

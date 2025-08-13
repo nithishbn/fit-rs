@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  fit-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3000"  # Map external 3001 to internal 3000
+    environment:
+      - RUST_LOG=info
+      - TMPDIR=/tmp/fitrs
+    volumes:
+      # Optional: mount local data directory for development
+      - ./data:/app/data:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - fitrs-network
+
+  # Optional: Add a reverse proxy for production deployment
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - fit-server
+    restart: unless-stopped
+    networks:
+      - fitrs-network
+    profiles:
+      - production
+
+networks:
+  fitrs-network:
+    driver: bridge
+
+volumes:
+  fitrs-data:
+    driver: local

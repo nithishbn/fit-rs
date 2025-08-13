@@ -1,0 +1,63 @@
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Build artifacts
+target/
+**/target/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Test files
+test_*/
+*test.py
+*test.sh
+example_*.sh
+
+# Documentation that's not needed in container
+*.md
+!README.md
+
+# Local environment
+.env
+.env.local
+
+# Temporary files
+*.tmp
+*.temp
+
+# Compiled Stan models (will be rebuilt in container)
+*.so
+*.dll
+
+# Data files (should be mounted if needed)
+data/
+ec50_output/
+
+# Static assets that might be large
+static/
+
+# Coverage and profiling
+coverage/
+*.profdata
+
+# Backup files
+*.bak
+*.backup
