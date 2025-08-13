@@ -1,4 +1,5 @@
 use crate::{BayesianEC50Fitter, DoseResponse, LL4Parameters, MCMCResult, ParameterSummary, Prior, PriorType};
+use crate::config::MCMCConfig;
 use anyhow::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -20,6 +21,7 @@ use std::{
 pub struct TuiPlotter {
     fitter: BayesianEC50Fitter,
     original_prior: Prior, // Store original priors from parameters.json
+    mcmc_config: MCMCConfig, // Store original MCMC configuration
     data: Vec<DoseResponse>,
     results: Option<MCMCResult>,
     summary: Option<ParameterSummary>,
@@ -70,11 +72,12 @@ impl Default for AppState {
 }
 
 impl TuiPlotter {
-    pub fn new(fitter: BayesianEC50Fitter, data: Vec<DoseResponse>) -> Self {
+    pub fn new(fitter: BayesianEC50Fitter, data: Vec<DoseResponse>, mcmc_config: MCMCConfig) -> Self {
         let original_prior = fitter.prior.clone(); // Store original priors
         Self {
             fitter,
             original_prior,
+            mcmc_config,
             data,
             results: None,
             summary: None,
@@ -119,8 +122,8 @@ impl TuiPlotter {
             .with_prior(new_prior)
             .with_sigma(self.fitter.sigma);
 
-        // Run MCMC fit with enough samples for stable confidence bands
-        let new_result = new_fitter.fit(800, 100);
+        // Run MCMC fit using the same sample counts as initially passed in
+        let new_result = new_fitter.fit(self.mcmc_config.samples, self.mcmc_config.burnin);
         let new_summary = new_fitter.summarize_results(&new_result);
 
         // Update results only, keep original fitter with original priors
