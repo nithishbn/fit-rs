@@ -13,6 +13,10 @@ path = "src/main.rs"
 name = "fit-server"
 path = "src/server.rs"
 
+[[bin]]
+name = "htmx-server"
+path = "src/htmx_server.rs"
+
 [dependencies]
 rand = "0.8"
 rand_distr = "0.4"
@@ -31,10 +35,13 @@ crossterm = "0.27"
 axum = { version = "0.7", features = ["multipart"] }
 tokio = { version = "1.0", features = ["full"] }
 tower = "0.4"
-tower-http = { version = "0.5", features = ["cors"] }
+tower-http = { version = "0.5", features = ["cors", "fs", "trace"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 tempfile = "3.0"
+askama = { version = "0.12", features = ["with-axum"] }
+askama_axum = "0.4"
+base64 = "0.22"
 
 [features]
 default = []

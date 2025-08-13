@@ -1,0 +1,129 @@
+<div class="compact-form">
+    <h6 class="mb-2">Parameters</h6>
+    <form hx-post="/update-parameters" 
+          hx-target="#results-container" 
+          hx-indicator="#fit-loading">
+        
+        <!-- Compact Prior Parameters -->
+        <div class="mb-2">
+            <small class="fw-bold text-muted">PRIORS</small>
+            <div class="row g-1">
+                <div class="col-6">
+                    <label class="form-label" style="font-size: 0.75rem;">Emin μ</label>
+                    <input type="number" class="form-control form-control-sm" name="emin_mean" 
+                           value="{{ config.priors.emin.mean }}" step="0.01" required>
+                </div>
+                <div class="col-6">
+                    <label class="form-label" style="font-size: 0.75rem;">Emin σ</label>
+                    <input type="number" class="form-control form-control-sm" name="emin_std" 
+                           value="{{ config.priors.emin.std }}" step="0.001" min="0.001" required>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-2">
+            <div class="row g-1">
+                <div class="col-6">
+                    <label class="form-label" style="font-size: 0.75rem;">Emax μ</label>
+                    <input type="number" class="form-control form-control-sm" name="emax_mean" 
+                           value="{{ config.priors.emax.mean }}" step="0.01" required>
+                </div>
+                <div class="col-6">
+                    <label class="form-label" style="font-size: 0.75rem;">Emax σ</label>
+                    <input type="number" class="form-control form-control-sm" name="emax_std" 
+                           value="{{ config.priors.emax.std }}" step="0.001" min="0.001" required>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-2">
+            <div class="row g-1">
+                <div class="col-6">
+                    <label class="form-label" style="font-size: 0.75rem;">EC50 μ</label>
+                    <input type="number" class="form-control form-control-sm" name="ec50_mean" 
+                           value="{{ config.priors.ec50.mean }}" step="0.1" required>
+                </div>
+                <div class="col-6">
+                    <label class="form-label" style="font-size: 0.75rem;">EC50 σ</label>
+                    <input type="number" class="form-control form-control-sm" name="ec50_std" 
+                           value="{{ config.priors.ec50.std }}" step="0.001" min="0.001" required>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <div class="row g-1">
+                <div class="col-6">
+                    <label class="form-label" style="font-size: 0.75rem;">Hill μ</label>
+                    <input type="number" class="form-control form-control-sm" name="hillslope_mean" 
+                           value="{{ config.priors.hillslope.mean }}" step="0.1" required>
+                </div>
+                <div class="col-6">
+                    <label class="form-label" style="font-size: 0.75rem;">Hill σ</label>
+                    <input type="number" class="form-control form-control-sm" name="hillslope_std" 
+                           value="{{ config.priors.hillslope.std }}" step="0.001" min="0.001" required>
+                </div>
+            </div>
+        </div>
+
+        <!-- Compact MCMC Settings -->
+        <div class="mb-2">
+            <small class="fw-bold text-muted">MCMC</small>
+            <div class="row g-1">
+                <div class="col-4">
+                    <label class="form-label" style="font-size: 0.75rem;">Samples</label>
+                    <input type="number" class="form-control form-control-sm" name="samples" 
+                           value="{{ config.mcmc.samples }}" min="100" max="10000" required>
+                </div>
+                <div class="col-4">
+                    <label class="form-label" style="font-size: 0.75rem;">Burnin</label>
+                    <input type="number" class="form-control form-control-sm" name="burnin" 
+                           value="{{ config.mcmc.burnin }}" min="50" max="5000" required>
+                </div>
+                <div class="col-4">
+                    <label class="form-label" style="font-size: 0.75rem;">Chains</label>
+                    <input type="number" class="form-control form-control-sm" name="chains" 
+                           value="{{ config.mcmc.chains }}" min="1" max="8" required>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <div class="row g-1">
+                <div class="col-6">
+                    <label class="form-label" style="font-size: 0.75rem;">Sigma</label>
+                    <input type="number" class="form-control form-control-sm" name="sigma" 
+                           value="{{ config.mcmc.sigma }}" step="0.0001" min="0.0001" max="1.0" required>
+                </div>
+                <div class="col-6">
+                    <label class="form-label" style="font-size: 0.75rem;">Backend</label>
+                    <select class="form-select form-select-sm" name="backend" required>
+                        <option value="mh" {% if config.mcmc.backend == "mh" %}selected{% endif %}>MH</option>
+                        <option value="stan" {% if config.mcmc.backend == "stan" %}selected{% endif %}>Stan</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Submit Button -->
+        <button type="submit" class="btn btn-success btn-sm w-100">
+            <span class="htmx-indicator spinner-border spinner-border-sm me-1" id="fit-loading"></span>
+            Fit Curve
+        </button>
+    </form>
+</div>
+
+<script>
+    // Compact validation
+    document.querySelectorAll('input[type="number"]').forEach(input => {
+        input.addEventListener('input', function() {
+            if (this.name.includes('_std') || this.name === 'sigma') {
+                if (parseFloat(this.value) <= 0) {
+                    this.setCustomValidity('Must be positive');
+                } else {
+                    this.setCustomValidity('');
+                }
+            }
+        });
+    });
+</script>

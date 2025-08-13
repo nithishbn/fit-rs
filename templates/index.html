@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EC50 Curve Fitting - HTMX Interface</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        .plot-container {
+            text-align: center;
+            margin: 10px 0;
+        }
+        .plot-container img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .htmx-indicator {
+            display: none;
+        }
+        .htmx-request .htmx-indicator {
+            display: inline;
+        }
+        .compact-form {
+            font-size: 0.9rem;
+        }
+        .compact-form input, .compact-form select {
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-12">
+                <header class="py-2 border-bottom">
+                    <h3 class="text-center text-primary mb-1">EC50 Curve Fitting</h3>
+                    <p class="text-center text-muted small mb-2">
+                        Bayesian curve fitting with real-time parameter editing
+                    </p>
+                </header>
+            </div>
+        </div>
+
+        <div class="row mt-3">
+            <!-- Left Column: Compact File Uploads -->
+            <div class="col-lg-3">
+                <!-- Data Upload -->
+                <div class="mb-3">
+                    <form hx-post="/upload-data" 
+                          hx-target="#data-status" 
+                          hx-encoding="multipart/form-data"
+                          hx-indicator="#data-loading">
+                        <label for="data_file" class="form-label small fw-bold">Data CSV</label>
+                        <input type="file" 
+                               class="form-control form-control-sm" 
+                               id="data_file" 
+                               name="data_file" 
+                               accept=".csv" 
+                               required>
+                        <button type="submit" class="btn btn-primary btn-sm mt-1 w-100">
+                            <span class="htmx-indicator spinner-border spinner-border-sm me-1" id="data-loading"></span>
+                            Upload
+                        </button>
+                    </form>
+                    <div id="data-status" class="mt-1">
+                        {% if has_data %}
+                            <small class="text-success">✅ Data loaded</small>
+                        {% else %}
+                            <small class="text-muted">No data</small>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Config Upload -->
+                <div class="mb-3">
+                    <form hx-post="/upload-config" 
+                          hx-target="#config-status" 
+                          hx-encoding="multipart/form-data"
+                          hx-indicator="#config-loading">
+                        <label for="config_file" class="form-label small fw-bold">Parameters JSON</label>
+                        <input type="file" 
+                               class="form-control form-control-sm" 
+                               id="config_file" 
+                               name="config_file" 
+                               accept=".json" 
+                               required>
+                        <button type="submit" class="btn btn-primary btn-sm mt-1 w-100">
+                            <span class="htmx-indicator spinner-border spinner-border-sm me-1" id="config-loading"></span>
+                            Upload
+                        </button>
+                    </form>
+                    <div id="config-status" class="mt-1">
+                        {% if has_config %}
+                            <small class="text-success">✅ Config loaded</small>
+                        {% else %}
+                            <small class="text-muted">No config</small>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Parameter Form Container -->
+                <div id="parameter-form-container">
+                    {% if has_config %}
+                        <div hx-get="/parameter-form" hx-trigger="load">
+                            <div class="text-center py-2">
+                                <div class="spinner-border spinner-border-sm"></div>
+                                <p class="small mt-1">Loading...</p>
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Right Column: Plot and Results -->
+            <div class="col-lg-9">
+                {% if has_data %}
+                {% if plot_data.is_some() %}
+                <div id="plot-container" class="plot-container">
+                    <img src="data:image/png;base64,{{ plot_data.as_ref().unwrap() }}" alt="Data Plot" class="img-fluid">
+                </div>
+                {% endif %}
+                {% endif %}
+
+
+                <!-- Results Container -->
+                <div id="results-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    
+    <!-- Bootstrap JS for dropdown functionality -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

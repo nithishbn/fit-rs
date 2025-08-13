@@ -1,0 +1,144 @@
+<!-- Fitted Plot -->
+<div class="plot-container mb-3">
+    <img src="data:image/png;base64,{{ plot_data }}" alt="Fitted Curve" class="img-fluid">
+</div>
+
+{% if fit_results.is_some() %}
+{% let results = fit_results.as_ref().unwrap() %}
+<!-- Compact Results -->
+<div class="card">
+    <div class="card-body p-3">
+        <h6 class="card-title mb-2">Results</h6>
+        
+        <!-- Parameter Estimates in compact grid -->
+        <div class="row g-2 mb-3">
+            <div class="col-6">
+                <div class="small">
+                    <strong>Emin:</strong> {{ results.emin.mean }} ± {{ results.emin.std }}
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="small">
+                    <strong>Emax:</strong> {{ results.emax.mean }} ± {{ results.emax.std }}
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="small">
+                    <strong>EC50 (log):</strong> {{ results.ec50_log.mean }} ± {{ results.ec50_log.std }}
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="small">
+                    <strong>Hill:</strong> {{ results.hillslope.mean }} ± {{ results.hillslope.std }}
+                </div>
+            </div>
+        </div>
+
+        <!-- EC50 Linear Scale highlight -->
+        <div class="alert alert-success py-2 mb-3">
+            <div class="text-center">
+                <strong>EC50 (Linear):</strong> {{ results.ec50_linear.mean }}
+                <br><small class="text-muted">95% CI: [{{ results.ec50_linear.ci_lower }}, {{ results.ec50_linear.ci_upper }}]</small>
+            </div>
+        </div>
+
+        <!-- Compact Diagnostics -->
+        <div class="row g-2">
+            <div class="col-6">
+                <div class="small">
+                    <strong>Acceptance:</strong> {{ results.acceptance_rate }}%
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="small">
+                    <strong>Quality:</strong> Good
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="mt-3">
+            <div class="row g-2">
+                <div class="col-6">
+                    <button type="button" class="btn btn-outline-primary btn-sm w-100" 
+                            hx-get="/parameter-form" hx-target="#parameter-form-container">
+                        Adjust Parameters
+                    </button>
+                </div>
+                <div class="col-6">
+                    <div class="btn-group w-100" role="group">
+                        <button type="button" class="btn btn-outline-success btn-sm dropdown-toggle" 
+                                data-bs-toggle="dropdown" aria-expanded="false">
+                            Download
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" onclick="downloadCoefficients()">Coefficients (JSON)</a></li>
+                            <li><a class="dropdown-item" href="/download-csv">Results (CSV)</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Store results data for download
+    {% if fit_results.is_some() %}
+    {% let results = fit_results.as_ref().unwrap() %}
+    window.currentResults = {
+        emin: {
+            mean: {{ results.emin.mean }},
+            std: {{ results.emin.std }},
+            ci_lower: {{ results.emin.ci_lower }},
+            ci_upper: {{ results.emin.ci_upper }}
+        },
+        emax: {
+            mean: {{ results.emax.mean }},
+            std: {{ results.emax.std }},
+            ci_lower: {{ results.emax.ci_lower }},
+            ci_upper: {{ results.emax.ci_upper }}
+        },
+        ec50_log: {
+            mean: {{ results.ec50_log.mean }},
+            std: {{ results.ec50_log.std }},
+            ci_lower: {{ results.ec50_log.ci_lower }},
+            ci_upper: {{ results.ec50_log.ci_upper }}
+        },
+        ec50_linear: {
+            mean: {{ results.ec50_linear.mean }},
+            std: {{ results.ec50_linear.std }},
+            ci_lower: {{ results.ec50_linear.ci_lower }},
+            ci_upper: {{ results.ec50_linear.ci_upper }}
+        },
+        hillslope: {
+            mean: {{ results.hillslope.mean }},
+            std: {{ results.hillslope.std }},
+            ci_lower: {{ results.hillslope.ci_lower }},
+            ci_upper: {{ results.hillslope.ci_upper }}
+        },
+        acceptance_rate: {{ results.acceptance_rate }},
+        diagnostics: "{{ results.diagnostics }}",
+        timestamp: new Date().toISOString()
+    };
+    {% endif %}
+
+    function downloadCoefficients() {
+        if (!window.currentResults) {
+            alert('No results available for download');
+            return;
+        }
+        
+        const blob = new Blob([JSON.stringify(window.currentResults, null, 2)], 
+                             { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'ec50_coefficients_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+</script>
+{% endif %}
