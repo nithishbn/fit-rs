@@ -1,4 +1,4 @@
-use axum::{extract::Multipart, http::StatusCode, response::Json, routing::post, Router};
+use axum::{extract::Multipart, http::{StatusCode, Method}, response::Json, routing::post, Router};
 use fit_rs::{io::load_csv, BayesianEC50Fitter, MCMCSampler, Prior, PriorType, StanSampler, Config};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -507,7 +507,13 @@ async fn main() {
         .route("/health", axum::routing::get(health_check))
         .layer(
             ServiceBuilder::new()
-                .layer(CorsLayer::permissive())
+                .layer(
+                    CorsLayer::new()
+                        .allow_origin(tower_http::cors::Any)
+                        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+                        .allow_headers(tower_http::cors::Any)
+                        .allow_credentials(false)
+                )
                 .into_inner(),
         );
 
