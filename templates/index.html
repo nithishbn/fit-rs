@@ -56,9 +56,19 @@
                             hx-encoding="multipart/form-data"
                             hx-indicator="#upload-loading"
                         >
-                            <label for="files" class="form-label small fw-bold"
-                                >Upload</label
-                            >
+                            <div class="d-flex align-items-center justify-content-between">
+                                <label for="files" class="form-label small fw-bold mb-0"
+                                    >Upload</label
+                                >
+                                <a
+                                    href="/static/example_files.zip"
+                                    download="example_files.zip"
+                                    class="btn btn-outline-secondary btn-sm"
+                                    title="Download example files"
+                                >
+                                    <i class="bi bi-question-circle"></i>
+                                </a>
+                            </div>
                             <input
                                 type="file"
                                 class="form-control form-control-sm"
@@ -101,23 +111,6 @@
                         </div>
                     </div>
 
-                    <!-- Example Files -->
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Example Files</label>
-                        <div class="d-flex gap-2">
-                            <a href="/static/example_data.csv" 
-                               download="example_data.csv" 
-                               class="btn btn-outline-secondary btn-sm">
-                                <i class="bi bi-download"></i> Data CSV
-                            </a>
-                            <a href="/static/example_parameters.json" 
-                               download="example_parameters.json" 
-                               class="btn btn-outline-secondary btn-sm">
-                                <i class="bi bi-download"></i> Parameters
-                            </a>
-                        </div>
-                        <small class="text-muted d-block mt-1">Download example files to get started</small>
-                    </div>
 
                     <!-- Parameter Form Container -->
                     <div id="parameter-form-container">
@@ -136,13 +129,13 @@
 
                 <!-- Right Column: Plot and Results -->
                 <div class="col-lg-8">
-                    <!-- Main Plot Container -->
-                    <div id="main-plot-container">
+                    <!-- Plot Container -->
+                    <div id="main-plot-container" style="width: min(90vw, 900px);">
                         {% if has_data %} {% if plot_json.is_some() %}
                         <div class="plot-container">
                             <div
                                 id="plotly-div"
-                                style="width: 100%; height: 400px"
+                                style="width: 100%; height: min(60vw, 600px)"
                             ></div>
                             <script>
                                 const plotData = {{ plot_json.as_ref().unwrap() }};
@@ -151,8 +144,8 @@
                         </div>
                         {% endif %} {% endif %}
                     </div>
-
-                    <!-- Results Container -->
+                    
+                    <!-- Results Container (Below Plot) -->
                     <div id="results-container">
                         <!-- Results will be inserted here after fitting -->
                     </div>
@@ -182,6 +175,33 @@
                     );
                 }
             });
+
+            // Make plot responsive to window resize
+            window.addEventListener('resize', function() {
+                const plotDiv = document.getElementById('plotly-div');
+                if (plotDiv && plotDiv._fullLayout) {
+                    Plotly.Plots.resize(plotDiv);
+                }
+            });
+
+            // Observe plot container size changes
+            if (window.ResizeObserver) {
+                const resizeObserver = new ResizeObserver(function(entries) {
+                    for (let entry of entries) {
+                        if (entry.target.id === 'plotly-div') {
+                            Plotly.Plots.resize(entry.target);
+                        }
+                    }
+                });
+                
+                // Start observing when plot is created
+                document.addEventListener('DOMContentLoaded', function() {
+                    const plotDiv = document.getElementById('plotly-div');
+                    if (plotDiv) {
+                        resizeObserver.observe(plotDiv);
+                    }
+                });
+            }
         </script>
     </body>
 </html>

@@ -162,7 +162,7 @@ async fn upload_files(
                 if !plot_json.is_empty() {
                     responses.push(format!(
                         r#"<div hx-swap-oob="innerHTML:#main-plot-container">
-                            <div id="plotly-div" style="width:100%;height:400px;"></div>
+                            <div id="plotly-div" style="width:100%;height:min(60vw,600px);"></div>
                             <script>
                                 Plotly.newPlot('plotly-div', {});
                             </script>
@@ -261,7 +261,7 @@ async fn upload_data(State(state): State<AppState>, mut multipart: Multipart) ->
                             ✅ Data uploaded successfully! {} data points loaded.
                         </div>
                         <div id="plot-container">
-                            <div id="plotly-div" style="width:100%;height:400px;"></div>
+                            <div id="plotly-div" style="width:100%;height:min(60vw,600px);"></div>
                             <script>
                                 Plotly.newPlot('plotly-div', {});
                             </script>
