@@ -1,0 +1,47 @@
+{
+  "input": {
+    "file": "example_data.csv",
+    "output_dir": "ec50_output"
+  },
+  "mcmc": {
+    "samples": 2000,
+    "burnin": 1000,
+    "chains": 4,
+    "sigma": 0.05,
+    "backend": "mh"
+  },
+  "priors": {
+    "emin": {
+      "type": "normal",
+      "mean": 0.0,
+      "std": 0.1,
+      "description": "Lower asymptote (baseline response)"
+    },
+    "emax": {
+      "type": "normal", 
+      "mean": 1.0,
+      "std": 0.1,
+      "description": "Upper asymptote (maximum response)"
+    },
+    "ec50": {
+      "type": "normal",
+      "mean": 0.0,
+      "std": 2.0,
+      "description": "EC50 on log10 scale"
+    },
+    "hillslope": {
+      "type": "normal",
+      "mean": 1.0,
+      "std": 1.0,
+      "description": "Hill slope (steepness of curve)"
+    }
+  },
+  "plotting": {
+    "bounds": {},
+    "verbose": false
+  },
+  "metadata": {
+    "description": "Example EC50 curve fitting configuration",
+    "version": "1.0"
+  }
+}

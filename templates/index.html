@@ -101,6 +101,24 @@
                         </div>
                     </div>
 
+                    <!-- Example Files -->
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Example Files</label>
+                        <div class="d-flex gap-2">
+                            <a href="/static/example_data.csv" 
+                               download="example_data.csv" 
+                               class="btn btn-outline-secondary btn-sm">
+                                <i class="bi bi-download"></i> Data CSV
+                            </a>
+                            <a href="/static/example_parameters.json" 
+                               download="example_parameters.json" 
+                               class="btn btn-outline-secondary btn-sm">
+                                <i class="bi bi-download"></i> Parameters
+                            </a>
+                        </div>
+                        <small class="text-muted d-block mt-1">Download example files to get started</small>
+                    </div>
+
                     <!-- Parameter Form Container -->
                     <div id="parameter-form-container">
                         {% if has_config %}
