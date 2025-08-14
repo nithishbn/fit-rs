@@ -1,3 +1,25 @@
+# Rust build artifacts
 /target
+Cargo.lock
+
+# Stan model artifacts
+*.so
+ec50_model_model.so
+
+# Python artifacts
+test_env/
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE artifacts
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS artifacts
+.DS_Store
+Thumbs.db
 
 data/
