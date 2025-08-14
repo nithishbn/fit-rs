@@ -44,8 +44,9 @@ WORKDIR /app
 # Copy the binary from builder stage
 COPY --from=builder /app/target/release/htmx-server /app/htmx-server
 
-# Copy templates directory
+# Copy templates and static directories
 COPY templates/ /app/templates/
+COPY static/ /app/static/
 
 # Create directory for temporary files and set permissions
 RUN mkdir -p /tmp/fitrs && chown -R appuser:appuser /tmp/fitrs /app
