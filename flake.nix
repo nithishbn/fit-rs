@@ -113,7 +113,7 @@
 
             meta = with pkgs.lib; {
               description = "EC50 curve fitting with Bayesian inference";
-              homepage = "https://github.com/your-repo/fit-rs";
+              homepage = "https://github.com/nithishbn/fit-rs";
               license = licenses.mit;
               maintainers = [ ];
             };
