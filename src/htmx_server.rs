@@ -6,14 +6,13 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use base64::Engine;
 use chrono;
 use fit_rs::{
     io::load_csv, BayesianEC50Fitter, Config, DoseResponse, LL4Parameters, MCMCSampler, Prior,
     StanSampler,
 };
-use plotters::prelude::*;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::{io::Write, sync::Arc};
 use tempfile::NamedTempFile;
 use tokio::sync::RwLock;
@@ -26,7 +25,7 @@ struct IndexTemplate {
     has_data: bool,
     has_config: bool,
     current_config: Option<String>,
-    plot_data: Option<String>,
+    plot_json: Option<String>,
 }
 
 #[derive(Template)]
@@ -36,9 +35,8 @@ struct ParameterFormTemplate {
 }
 
 #[derive(Template)]
-#[template(path = "plot_update.html")]
-struct PlotUpdateTemplate {
-    plot_data: String,
+#[template(path = "fit_results.html")]
+struct FitResultsTemplate {
     fit_results: Option<FitResultsDisplay>,
 }
 
@@ -50,6 +48,7 @@ struct FitResultsDisplay {
     ec50_linear: ParamDisplay,
     hillslope: ParamDisplay,
     acceptance_rate: f64,
+    acceptance_rate_formatted: String,
     diagnostics: String,
 }
 
@@ -59,6 +58,10 @@ struct ParamDisplay {
     std: f64,
     ci_lower: f64,
     ci_upper: f64,
+    mean_formatted: String,
+    std_formatted: String,
+    ci_lower_formatted: String,
+    ci_upper_formatted: String,
 }
 
 #[derive(Clone)]
@@ -88,13 +91,13 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
         .as_ref()
         .map(|c| serde_json::to_string_pretty(c).unwrap_or_default());
 
-    // Generate a simple plot if we have data
-    let plot_data = if let Some(ref data_vec) = *data {
-        match generate_data_plot(data_vec).await {
+    // Generate plot data JSON if we have data
+    let plot_json = if let Some(ref data_vec) = *data {
+        match generate_data_plot_json(data_vec).await {
             Ok(plot) if !plot.is_empty() => Some(plot),
             Ok(_) => None,
             Err(e) => {
-                eprintln!("Error generating plot: {}", e);
+                eprintln!("Error generating plot data: {}", e);
                 None
             }
         }
@@ -106,7 +109,7 @@ async fn index(State(state): State<AppState>) -> impl IntoResponse {
         has_data,
         has_config,
         current_config,
-        plot_data,
+        plot_json,
     };
 
     Html(template.render().unwrap())
@@ -148,20 +151,23 @@ async fn upload_files(
                 *state.data.write().await = Some(parsed_data.clone());
                 data_loaded = true;
 
-                // Generate initial plot and update main plot container
-                let plot_data = generate_data_plot(&parsed_data).await.unwrap_or_else(|e| {
-                    eprintln!("Error generating plot: {}", e);
-                    String::new()
-                });
+                // Generate initial plot data and update main plot container
+                let plot_json = generate_data_plot_json(&parsed_data)
+                    .await
+                    .unwrap_or_else(|e| {
+                        eprintln!("Error generating plot data: {}", e);
+                        String::new()
+                    });
 
-                if !plot_data.is_empty() {
+                if !plot_json.is_empty() {
                     responses.push(format!(
                         r#"<div hx-swap-oob="innerHTML:#main-plot-container">
-                            <div class="plot-container">
-                                <img src="data:image/png;base64,{}" alt="Data Plot" class="img-fluid">
-                            </div>
+                            <div id="plotly-div" style="width:100%;height:400px;"></div>
+                            <script>
+                                Plotly.newPlot('plotly-div', {});
+                            </script>
                         </div>"#,
-                        plot_data
+                        plot_json
                     ));
                 }
             }
@@ -240,11 +246,14 @@ async fn upload_data(State(state): State<AppState>, mut multipart: Multipart) ->
                 Ok(parsed_data) => {
                     *state.data.write().await = Some(parsed_data.clone());
 
-                    // Generate initial plot
-                    let plot_data = generate_data_plot(&parsed_data).await.unwrap_or_else(|e| {
-                        eprintln!("Error generating plot: {}", e);
-                        String::new()
-                    });
+                    // Generate initial plot data
+                    let plot_json =
+                        generate_data_plot_json(&parsed_data)
+                            .await
+                            .unwrap_or_else(|e| {
+                                eprintln!("Error generating plot data: {}", e);
+                                String::new()
+                            });
 
                     return Html(format!(
                         r#"
@@ -252,11 +261,14 @@ async fn upload_data(State(state): State<AppState>, mut multipart: Multipart) ->
                             ✅ Data uploaded successfully! {} data points loaded.
                         </div>
                         <div id="plot-container">
-                            <img src="data:image/png;base64,{}" alt="Data Plot" class="img-fluid">
+                            <div id="plotly-div" style="width:100%;height:400px;"></div>
+                            <script>
+                                Plotly.newPlot('plotly-div', {});
+                            </script>
                         </div>
                         "#,
                         parsed_data.len(),
-                        plot_data
+                        plot_json
                     ));
                 }
                 Err(e) => {
@@ -356,16 +368,16 @@ struct UpdateParametersForm {
 async fn update_parameters(
     State(state): State<AppState>,
     axum::extract::Form(form): axum::extract::Form<UpdateParametersForm>,
-) -> impl IntoResponse {
+) -> Response {
     let data_guard = state.data.read().await;
     let mut config_guard = state.config.write().await;
 
     let Some(data) = data_guard.as_ref() else {
-        return Html(r#"<div class="alert alert-danger">❌ No data loaded. Please upload a CSV file first.</div>"#.to_string());
+        return Html(r#"<div class="alert alert-danger">❌ No data loaded. Please upload a CSV file first.</div>"#).into_response();
     };
 
     let Some(config) = config_guard.as_mut() else {
-        return Html(r#"<div class="alert alert-danger">❌ No configuration loaded. Please upload a parameters.json file first.</div>"#.to_string());
+        return Html(r#"<div class="alert alert-danger">❌ No configuration loaded. Please upload a parameters.json file first.</div>"#).into_response();
     };
 
     // Update config with new parameters
@@ -388,7 +400,8 @@ async fn update_parameters(
         return Html(format!(
             r#"<div class="alert alert-danger">❌ Invalid parameters: {}</div>"#,
             e
-        ));
+        ))
+        .into_response();
     }
 
     // Run the fitting process
@@ -398,7 +411,8 @@ async fn update_parameters(
             return Html(format!(
                 r#"<div class="alert alert-danger">❌ Error converting priors: {}</div>"#,
                 e
-            ));
+            ))
+            .into_response();
         }
     };
 
@@ -414,19 +428,27 @@ async fn update_parameters(
     .await;
 
     match fitting_result {
-        Ok((plot_data, fit_results)) => {
+        Ok((plot_json, fit_results)) => {
             *state.fit_results.write().await = Some(fit_results.clone());
 
-            let template = PlotUpdateTemplate {
-                plot_data,
+            // Create the results template
+            let template = FitResultsTemplate {
                 fit_results: Some(fit_results),
             };
-            Html(template.render().unwrap())
+
+            // Return response with HX-Trigger header containing plot data
+            let html_content = template.render().unwrap();
+            Response::builder()
+                .header("HX-Trigger", format!("{{\"updatePlot\": {}}}", plot_json))
+                .header("Content-Type", "text/html")
+                .body(html_content.into())
+                .unwrap()
         }
         Err(e) => Html(format!(
             r#"<div class="alert alert-danger">❌ Fitting failed: {}</div>"#,
             e
-        )),
+        ))
+        .into_response(),
     }
 }
 
@@ -467,10 +489,17 @@ async fn run_mcmc_fitting(
         }
     };
 
-    // Generate plot with fitted curve
-    let plot_data = generate_fitted_plot(&data, &result, &summary)
+    // Generate plot data with fitted curve
+    let plot_json = generate_fitted_plot_json(&data, &result, &summary)
         .await
-        .map_err(|e| format!("Failed to generate plot: {}", e))?;
+        .map_err(|e| format!("Failed to generate plot data: {}", e))?;
+
+    let ec50_linear_mean = 10.0_f64.powf(summary.ec50.mean);
+    let ec50_linear_std =
+        10.0_f64.powf(summary.ec50.mean + summary.ec50.std) - 10.0_f64.powf(summary.ec50.mean);
+    let ec50_linear_ci_lower = 10.0_f64.powf(summary.ec50.ci_lower);
+    let ec50_linear_ci_upper = 10.0_f64.powf(summary.ec50.ci_upper);
+    let acceptance_rate_percent = summary.acceptance_rate * 100.0;
 
     let fit_display = FitResultsDisplay {
         emin: ParamDisplay {
@@ -478,285 +507,316 @@ async fn run_mcmc_fitting(
             std: summary.emin.std,
             ci_lower: summary.emin.ci_lower,
             ci_upper: summary.emin.ci_upper,
+            mean_formatted: format_4_sig_figs(summary.emin.mean),
+            std_formatted: format_4_sig_figs(summary.emin.std),
+            ci_lower_formatted: format_4_sig_figs(summary.emin.ci_lower),
+            ci_upper_formatted: format_4_sig_figs(summary.emin.ci_upper),
         },
         emax: ParamDisplay {
             mean: summary.emax.mean,
             std: summary.emax.std,
             ci_lower: summary.emax.ci_lower,
             ci_upper: summary.emax.ci_upper,
+            mean_formatted: format_4_sig_figs(summary.emax.mean),
+            std_formatted: format_4_sig_figs(summary.emax.std),
+            ci_lower_formatted: format_4_sig_figs(summary.emax.ci_lower),
+            ci_upper_formatted: format_4_sig_figs(summary.emax.ci_upper),
         },
         ec50_log: ParamDisplay {
             mean: summary.ec50.mean,
             std: summary.ec50.std,
             ci_lower: summary.ec50.ci_lower,
             ci_upper: summary.ec50.ci_upper,
+            mean_formatted: format_4_sig_figs(summary.ec50.mean),
+            std_formatted: format_4_sig_figs(summary.ec50.std),
+            ci_lower_formatted: format_4_sig_figs(summary.ec50.ci_lower),
+            ci_upper_formatted: format_4_sig_figs(summary.ec50.ci_upper),
         },
         ec50_linear: ParamDisplay {
-            mean: 10.0_f64.powf(summary.ec50.mean),
-            std: 10.0_f64.powf(summary.ec50.mean + summary.ec50.std)
-                - 10.0_f64.powf(summary.ec50.mean),
-            ci_lower: 10.0_f64.powf(summary.ec50.ci_lower),
-            ci_upper: 10.0_f64.powf(summary.ec50.ci_upper),
+            mean: ec50_linear_mean,
+            std: ec50_linear_std,
+            ci_lower: ec50_linear_ci_lower,
+            ci_upper: ec50_linear_ci_upper,
+            mean_formatted: format_4_sig_figs(ec50_linear_mean),
+            std_formatted: format_4_sig_figs(ec50_linear_std),
+            ci_lower_formatted: format_4_sig_figs(ec50_linear_ci_lower),
+            ci_upper_formatted: format_4_sig_figs(ec50_linear_ci_upper),
         },
         hillslope: ParamDisplay {
             mean: summary.hillslope.mean,
             std: summary.hillslope.std,
             ci_lower: summary.hillslope.ci_lower,
             ci_upper: summary.hillslope.ci_upper,
+            mean_formatted: format_4_sig_figs(summary.hillslope.mean),
+            std_formatted: format_4_sig_figs(summary.hillslope.std),
+            ci_lower_formatted: format_4_sig_figs(summary.hillslope.ci_lower),
+            ci_upper_formatted: format_4_sig_figs(summary.hillslope.ci_upper),
         },
-        acceptance_rate: summary.acceptance_rate * 100.0,
+        acceptance_rate: acceptance_rate_percent,
+        acceptance_rate_formatted: format_4_sig_figs(acceptance_rate_percent),
         diagnostics: format!(
             "Effective sample size: ~{:.0}",
             summary.n_samples as f64 * summary.acceptance_rate
         ),
     };
 
-    Ok((plot_data, fit_display))
+    Ok((plot_json, fit_display))
 }
 
-async fn generate_data_plot(data: &[DoseResponse]) -> Result<String, Box<dyn std::error::Error>> {
-    let temp_file = tempfile::NamedTempFile::with_suffix(".png")?;
-    let temp_path = temp_file.path();
+async fn generate_data_plot_json(
+    data: &[DoseResponse],
+) -> Result<String, Box<dyn std::error::Error>> {
+    let data_points: Vec<(f64, f64)> = data
+        .iter()
+        .map(|d| (d.concentration.log10(), d.response))
+        .collect();
 
-    {
-        let root = BitMapBackend::new(temp_path, (1600, 1200)).into_drawing_area();
-        root.fill(&WHITE)?;
-
-        let data_points: Vec<(f64, f64)> = data
-            .iter()
-            .map(|d| (d.concentration.log10(), d.response))
-            .collect();
-
-        if data_points.is_empty() {
-            return Ok(String::new());
-        }
-
-        let x_min = data_points
-            .iter()
-            .map(|(x, _)| *x)
-            .fold(f64::INFINITY, f64::min)
-            - 0.5;
-        let x_max = data_points
-            .iter()
-            .map(|(x, _)| *x)
-            .fold(f64::NEG_INFINITY, f64::max)
-            + 0.5;
-        let y_min = data_points
-            .iter()
-            .map(|(_, y)| *y)
-            .fold(f64::INFINITY, f64::min)
-            - 0.1;
-        let y_max = data_points
-            .iter()
-            .map(|(_, y)| *y)
-            .fold(f64::NEG_INFINITY, f64::max)
-            + 0.1;
-
-        let mut chart = ChartBuilder::on(&root)
-            .caption("Uploaded Data", ("sans-serif", 48))
-            .margin(40)
-            .x_label_area_size(80)
-            .y_label_area_size(120)
-            .build_cartesian_2d(x_min..x_max, y_min..y_max)?;
-
-        chart
-            .configure_mesh()
-            .x_desc("Log10(Concentration)")
-            .y_desc("Response")
-            .label_style(("sans-serif", 24))
-            .axis_desc_style(("sans-serif", 32))
-            .draw()?;
-
-        chart
-            .draw_series(
-                data_points
-                    .iter()
-                    .map(|&(x, y)| Circle::new((x, y), 8, BLUE.filled())),
-            )?
-            .label("Data Points")
-            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], BLUE));
-
-        chart.configure_series_labels().draw()?;
-        root.present()?;
-        drop(root);
+    if data_points.is_empty() {
+        return Ok(String::new());
     }
 
-    // Read the file and encode as base64
-    let image_data = std::fs::read(temp_path)?;
-    Ok(base64::engine::general_purpose::STANDARD.encode(&image_data))
+    let x_values: Vec<f64> = data_points.iter().map(|(x, _)| *x).collect();
+    let y_values: Vec<f64> = data_points.iter().map(|(_, y)| *y).collect();
+
+    let plot_data = json!({
+        "data": [{
+            "x": x_values,
+            "y": y_values,
+            "mode": "markers",
+            "type": "scatter",
+            "name": "Data Points",
+            "marker": {
+                "color": "blue",
+                "size": 8
+            }
+        }],
+        "layout": {
+            "xaxis": {
+                "title": "log10(Concentration)",
+                "showgrid": true
+            },
+            "yaxis": {
+                "title": "Response",
+                "showgrid": true
+            },
+            "showlegend": true,
+            "hovermode": "closest"
+        },
+        "config": {
+            "displayModeBar": true,
+            "responsive": true
+        }
+    });
+
+    Ok(plot_data.to_string())
 }
 
-async fn generate_fitted_plot(
+async fn generate_fitted_plot_json(
     data: &[DoseResponse],
     results: &fit_rs::MCMCResult,
     summary: &fit_rs::ParameterSummary,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let temp_file = tempfile::NamedTempFile::with_suffix(".png")?;
-    let temp_path = temp_file.path();
+    let data_points: Vec<(f64, f64)> = data
+        .iter()
+        .map(|d| (d.concentration.log10(), d.response))
+        .collect();
 
-    {
-        let root = BitMapBackend::new(temp_path, (1600, 1200)).into_drawing_area();
-        root.fill(&WHITE)?;
+    let x_min = data_points
+        .iter()
+        .map(|(x, _)| *x)
+        .fold(f64::INFINITY, f64::min)
+        - 1.0;
+    let x_max = data_points
+        .iter()
+        .map(|(x, _)| *x)
+        .fold(f64::NEG_INFINITY, f64::max)
+        + 1.0;
 
-        let data_points: Vec<(f64, f64)> = data
-            .iter()
-            .map(|d| (d.concentration.log10(), d.response))
-            .collect();
+    // Generate fitted curve using mean parameters
+    let params_mean = LL4Parameters {
+        emin: summary.emin.mean,
+        emax: summary.emax.mean,
+        ec50: summary.ec50.mean,
+        hillslope: summary.hillslope.mean,
+    };
 
-        let x_min = data_points
-            .iter()
-            .map(|(x, _)| *x)
-            .fold(f64::INFINITY, f64::min)
-            - 1.0;
-        let x_max = data_points
-            .iter()
-            .map(|(x, _)| *x)
-            .fold(f64::NEG_INFINITY, f64::max)
-            + 1.0;
-        let y_min = data_points
-            .iter()
-            .map(|(_, y)| *y)
-            .fold(f64::INFINITY, f64::min)
-            - 0.1;
-        let y_max = data_points
-            .iter()
-            .map(|(_, y)| *y)
-            .fold(f64::NEG_INFINITY, f64::max)
-            + 0.1;
+    let x_points: Vec<f64> = (0..100)
+        .map(|i| x_min + (x_max - x_min) * i as f64 / 99.0)
+        .collect();
 
-        let mut chart = ChartBuilder::on(&root)
-            .caption("Fit", ("sans-serif", 48))
-            .margin(40)
-            .x_label_area_size(80)
-            .y_label_area_size(120)
-            .build_cartesian_2d(x_min..x_max, y_min..y_max)?;
+    let curve_points: Vec<f64> = x_points
+        .iter()
+        .map(|&log_conc| {
+            let conc = 10.0_f64.powf(log_conc);
+            ll4_model(conc, &params_mean)
+        })
+        .collect();
 
-        chart
-            .configure_mesh()
-            .x_desc("log10(Concentration)")
-            .y_desc("Response")
-            .label_style(("sans-serif", 24))
-            .axis_desc_style(("sans-serif", 32))
-            .draw()?;
+    // Generate confidence bands using MCMC samples
+    let sample_step = (results.samples.len() / 100).max(1);
+    let mut curve_predictions: Vec<Vec<f64>> = vec![Vec::new(); x_points.len()];
 
-        // Generate fitted curve using mean parameters
-        let params_mean = LL4Parameters {
-            emin: summary.emin.mean,
-            emax: summary.emax.mean,
-            ec50: summary.ec50.mean,
-            hillslope: summary.hillslope.mean,
-        };
+    for (i, sample) in results.samples.iter().step_by(sample_step).enumerate() {
+        if i >= 50 {
+            break;
+        } // Limit to 50 samples for performance
 
-        let x_points: Vec<f64> = (0..100)
-            .map(|i| x_min + (x_max - x_min) * i as f64 / 99.0)
-            .collect();
-
-        let curve_points: Vec<(f64, f64)> = x_points
-            .iter()
-            .map(|&log_conc| {
-                let conc = 10.0_f64.powf(log_conc);
-                let response = ll4_model(conc, &params_mean);
-                (log_conc, response)
-            })
-            .collect();
-
-        // Generate confidence bands using MCMC samples
-        // Sample every 10th sample to reduce computation
-        let sample_step = (results.samples.len() / 100).max(1);
-        let mut curve_predictions: Vec<Vec<f64>> = vec![Vec::new(); x_points.len()];
-
-        for (i, sample) in results.samples.iter().step_by(sample_step).enumerate() {
-            if i >= 50 {
-                break;
-            } // Limit to 50 samples for performance
-
-            for (j, &log_conc) in x_points.iter().enumerate() {
-                let conc = 10.0_f64.powf(log_conc);
-                let response = ll4_model(conc, sample);
-                curve_predictions[j].push(response);
-            }
+        for (j, &log_conc) in x_points.iter().enumerate() {
+            let conc = 10.0_f64.powf(log_conc);
+            let response = ll4_model(conc, sample);
+            curve_predictions[j].push(response);
         }
-
-        // Calculate percentiles for confidence bands
-        let mut upper_bounds = Vec::new();
-        let mut lower_bounds = Vec::new();
-
-        for (i, predictions) in curve_predictions.iter().enumerate() {
-            if !predictions.is_empty() {
-                let mut sorted_predictions = predictions.clone();
-                sorted_predictions.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-                let lower_idx = (sorted_predictions.len() as f64 * 0.025) as usize;
-                let upper_idx = (sorted_predictions.len() as f64 * 0.975) as usize;
-
-                upper_bounds.push((
-                    x_points[i],
-                    sorted_predictions[upper_idx.min(sorted_predictions.len() - 1)],
-                ));
-                lower_bounds.push((x_points[i], sorted_predictions[lower_idx]));
-            }
-        }
-
-        // Draw confidence bands
-        if !upper_bounds.is_empty() && !lower_bounds.is_empty() {
-            let confidence_area: Vec<(f64, f64)> = lower_bounds
-                .iter()
-                .cloned()
-                .chain(upper_bounds.iter().rev().cloned())
-                .collect();
-
-            chart
-                .draw_series(std::iter::once(Polygon::new(
-                    confidence_area,
-                    RED.mix(0.15).filled(),
-                )))?
-                .label("95% Confidence")
-                .legend(|(x, y)| Rectangle::new([(x, y), (x + 10, y + 5)], RED.mix(0.15).filled()));
-        }
-
-        // Draw fitted curve (mean)
-        chart
-            .draw_series(LineSeries::new(
-                curve_points.iter().cloned(),
-                RED.stroke_width(2),
-            ))?
-            .label("Best Fit")
-            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], RED));
-
-        // Draw data points
-        chart
-            .draw_series(
-                data_points
-                    .iter()
-                    .map(|&(x, y)| Circle::new((x, y), 8, BLUE.filled())),
-            )?
-            .label("Data Points")
-            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], BLUE));
-
-        // Draw EC50 line
-        let ec50_line = vec![(summary.ec50.mean, y_min), (summary.ec50.mean, y_max)];
-        chart
-            .draw_series(LineSeries::new(
-                ec50_line.iter().cloned(),
-                GREEN.stroke_width(2),
-            ))?
-            .label(&format!("log(EC50): {:.2}", summary.ec50.mean))
-            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 10, y)], GREEN));
-
-        chart.configure_series_labels().draw()?;
-        root.present()?;
-        drop(root);
     }
 
-    // Read the file and encode as base64
-    let image_data = std::fs::read(temp_path)?;
-    Ok(base64::engine::general_purpose::STANDARD.encode(&image_data))
+    // Calculate percentiles for confidence bands
+    let mut upper_bounds = Vec::new();
+    let mut lower_bounds = Vec::new();
+
+    for predictions in curve_predictions.iter() {
+        if !predictions.is_empty() {
+            let mut sorted_predictions = predictions.clone();
+            sorted_predictions.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            let lower_idx = (sorted_predictions.len() as f64 * 0.025) as usize;
+            let upper_idx = (sorted_predictions.len() as f64 * 0.975) as usize;
+
+            upper_bounds.push(sorted_predictions[upper_idx.min(sorted_predictions.len() - 1)]);
+            lower_bounds.push(sorted_predictions[lower_idx]);
+        }
+    }
+
+    let data_x: Vec<f64> = data_points.iter().map(|(x, _)| *x).collect();
+    let data_y: Vec<f64> = data_points.iter().map(|(_, y)| *y).collect();
+
+    let y_min = data_points
+        .iter()
+        .map(|(_, y)| *y)
+        .fold(f64::INFINITY, f64::min);
+    let y_max = data_points
+        .iter()
+        .map(|(_, y)| *y)
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    let plot_data = json!({
+        "data": [
+            {
+                "x": data_x,
+                "y": data_y,
+                "mode": "markers",
+                "type": "scatter",
+                "name": "Data Points",
+                "marker": {
+                    "color": "blue",
+                    "size": 8
+                }
+            },
+            {
+                "x": x_points,
+                "y": curve_points,
+                "mode": "lines",
+                "type": "scatter",
+                "name": "Best Fit",
+                "line": {
+                    "color": "red",
+                    "width": 3
+                }
+            },
+            {
+                "x": x_points.clone(),
+                "y": upper_bounds,
+                "mode": "lines",
+                "type": "scatter",
+                "name": "95% CI Upper",
+                "line": {
+                    "color": "rgba(255,0,0,0.3)",
+                    "width": 1
+                },
+                "showlegend": false
+            },
+            {
+                "x": x_points.clone(),
+                "y": lower_bounds,
+                "mode": "lines",
+                "type": "scatter",
+                "name": "95% Confidence",
+                "line": {
+                    "color": "rgba(255,0,0,0.3)",
+                    "width": 1
+                },
+                "fill": "tonexty",
+                "fillcolor": "rgba(255,0,0,0.1)"
+            },
+            {
+                "x": [summary.ec50.mean, summary.ec50.mean],
+                "y": [y_min - 0.1, y_max + 0.1],
+                "mode": "lines",
+                "type": "scatter",
+                "name": &format!("EC50: {:.2}", summary.ec50.mean),
+                "line": {
+                    "color": "green",
+                    "width": 2,
+                    "dash": "dash"
+                }
+            }
+        ],
+        "layout": {
+            "xaxis": {
+                "title": "log10(Concentration)",
+                "showgrid": true
+            },
+            "yaxis": {
+                "title": "Response",
+                "showgrid": true
+            },
+            "showlegend": true,
+            "hovermode": "closest"
+        },
+        "config": {
+            "displayModeBar": true,
+            "responsive": true
+        }
+    });
+
+    Ok(plot_data.to_string())
 }
 
 fn ll4_model(concentration: f64, params: &LL4Parameters) -> f64 {
     params.emin
         + (params.emax - params.emin)
             / (1.0 + 10.0_f64.powf(params.hillslope * (params.ec50 - concentration.log10())))
+}
+
+fn format_4_sig_figs(value: f64) -> String {
+    if value == 0.0 {
+        return "0".to_string();
+    }
+
+    let abs_value = value.abs();
+    let log10_abs = abs_value.log10();
+    let magnitude = log10_abs.floor() as i32;
+    let normalized = abs_value / 10.0_f64.powi(magnitude);
+
+    // Round to 4 significant figures
+    let rounded = (normalized * 1000.0).round() / 1000.0;
+    let result = rounded * 10.0_f64.powi(magnitude);
+
+    // Choose appropriate format based on magnitude
+    if magnitude >= -2 && magnitude <= 4 {
+        // Use decimal notation for reasonable ranges
+        let decimal_places = (3 - magnitude).max(0) as usize;
+        if value < 0.0 {
+            format!("-{:.prec$}", result.abs(), prec = decimal_places)
+        } else {
+            format!("{:.prec$}", result, prec = decimal_places)
+        }
+    } else {
+        // Use scientific notation for very large or very small numbers
+        if value < 0.0 {
+            format!("-{:.3e}", result.abs())
+        } else {
+            format!("{:.3e}", result)
+        }
+    }
 }
 
 async fn download_csv(State(state): State<AppState>) -> impl IntoResponse {

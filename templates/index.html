@@ -1,118 +1,169 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EC50 Curve Fitting - HTMX Interface</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <style>
-        .plot-container {
-            text-align: center;
-            margin: 10px 0;
-        }
-        .plot-container img {
-            max-width: 100%;
-            height: auto;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-        }
-        .htmx-indicator {
-            display: none;
-        }
-        .htmx-request .htmx-indicator {
-            display: inline;
-        }
-        .compact-form {
-            font-size: 0.9rem;
-        }
-        .compact-form input, .compact-form select {
-            font-size: 0.85rem;
-        }
-    </style>
-</head>
-<body>
-    <div class="container-fluid">
-        <div class="row">
-            <div class="col-12">
-                <header class="py-2 border-bottom">
-                    <h3 class="text-center text-primary mb-1">EC50 Curve Fitting</h3>
-                    <p class="text-center text-muted small mb-2">
-                        Bayesian curve fitting with real-time parameter editing
-                    </p>
-                </header>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>fit-rs</title>
+        <link
+            href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+            rel="stylesheet"
+        />
+        <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <style>
+            .plot-container {
+                text-align: center;
+                margin: 10px 0;
+            }
+            #plotly-div {
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                background: white;
+            }
+            .htmx-indicator {
+                display: none;
+            }
+            .htmx-request .htmx-indicator {
+                display: inline;
+            }
+            .compact-form {
+                font-size: 0.9rem;
+            }
+            .compact-form input,
+            .compact-form select {
+                font-size: 0.85rem;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-12">
+                    <header class="py-2 border-bottom">
+                        <h3 class="text-left text-primary mb-1">fit-rs</h3>
+                    </header>
+                </div>
             </div>
-        </div>
 
-        <div class="row mt-3">
-            <!-- Left Column: Compact File Uploads -->
-            <div class="col-lg-3">
-                <!-- Combined File Upload -->
-                <div class="mb-3">
-                    <form hx-post="/upload-files" 
-                          hx-target="#upload-status" 
-                          hx-encoding="multipart/form-data"
-                          hx-indicator="#upload-loading">
-                        <label for="files" class="form-label small fw-bold">Files</label>
-                        <input type="file" 
-                               class="form-control form-control-sm" 
-                               id="files" 
-                               name="files" 
-                               accept=".csv,.json" 
-                               multiple
-                               required>
-                        <small class="form-text text-muted">Upload CSV data and JSON config</small>
-                        <button type="submit" class="btn btn-primary btn-sm mt-1 w-100">
-                            <span class="htmx-indicator spinner-border spinner-border-sm me-1" id="upload-loading"></span>
-                            Upload Files
-                        </button>
-                    </form>
-                    <div id="upload-status" class="mt-1">
-                        {% if has_data && has_config %}
-                            <small class="text-success">✅ Data & Config loaded</small>
-                        {% else if has_data %}
-                            <small class="text-warning">⚠️ Data loaded, need config</small>
-                        {% else if has_config %}
-                            <small class="text-warning">⚠️ Config loaded, need data</small>
-                        {% else %}
+            <div class="row mt-3">
+                <!-- Left Column: Compact File Uploads -->
+                <div class="col-lg-4">
+                    <!-- Combined File Upload -->
+                    <div class="mb-3">
+                        <form
+                            hx-post="/upload-files"
+                            hx-target="#upload-status"
+                            hx-encoding="multipart/form-data"
+                            hx-indicator="#upload-loading"
+                        >
+                            <label for="files" class="form-label small fw-bold"
+                                >Upload</label
+                            >
+                            <input
+                                type="file"
+                                class="form-control form-control-sm"
+                                id="files"
+                                name="files"
+                                accept=".csv,.json"
+                                multiple
+                                required
+                            />
+                            <small class="form-text text-muted"
+                                >Upload CSV data and JSON config</small
+                            >
+                            <button
+                                type="submit"
+                                class="btn btn-primary btn-sm mt-1 w-100"
+                            >
+                                <span
+                                    class="htmx-indicator spinner-border spinner-border-sm me-1"
+                                    id="upload-loading"
+                                ></span>
+                                Upload Files
+                            </button>
+                        </form>
+                        <div id="upload-status" class="mt-1">
+                            {% if has_data && has_config %}
+                            <small class="text-success"
+                                >✅ Data & Config loaded</small
+                            >
+                            {% else if has_data %}
+                            <small class="text-warning"
+                                >⚠️ Data loaded, need config</small
+                            >
+                            {% else if has_config %}
+                            <small class="text-warning"
+                                >⚠️ Config loaded, need data</small
+                            >
+                            {% else %}
                             <small class="text-muted">No files uploaded</small>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Parameter Form Container -->
+                    <div id="parameter-form-container">
+                        {% if has_config %}
+                        <div hx-get="/parameter-form" hx-trigger="load">
+                            <div class="text-center py-2">
+                                <div
+                                    class="spinner-border spinner-border-sm"
+                                ></div>
+                                <p class="small mt-1">Loading...</p>
+                            </div>
+                        </div>
                         {% endif %}
                     </div>
                 </div>
 
-                <!-- Parameter Form Container -->
-                <div id="parameter-form-container">
-                    {% if has_config %}
-                        <div hx-get="/parameter-form" hx-trigger="load">
-                            <div class="text-center py-2">
-                                <div class="spinner-border spinner-border-sm"></div>
-                                <p class="small mt-1">Loading...</p>
-                            </div>
+                <!-- Right Column: Plot and Results -->
+                <div class="col-lg-8">
+                    <!-- Main Plot Container -->
+                    <div id="main-plot-container">
+                        {% if has_data %} {% if plot_json.is_some() %}
+                        <div class="plot-container">
+                            <div
+                                id="plotly-div"
+                                style="width: 100%; height: 400px"
+                            ></div>
+                            <script>
+                                const plotData = {{ plot_json.as_ref().unwrap() }};
+                                Plotly.newPlot('plotly-div', plotData.data, plotData.layout, plotData.config);
+                            </script>
                         </div>
-                    {% endif %}
-                </div>
-            </div>
-
-            <!-- Right Column: Plot and Results -->
-            <div class="col-lg-9">
-                <!-- Main Plot Container -->
-                <div id="main-plot-container">
-                    {% if has_data %}
-                    {% if plot_data.is_some() %}
-                    <div class="plot-container">
-                        <img src="data:image/png;base64,{{ plot_data.as_ref().unwrap() }}" alt="Data Plot" class="img-fluid">
+                        {% endif %} {% endif %}
                     </div>
-                    {% endif %}
-                    {% endif %}
+
+                    <!-- Results Container -->
+                    <div id="results-container">
+                        <!-- Results will be inserted here after fitting -->
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
-    
-    <!-- Bootstrap JS for dropdown functionality -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-</body>
+        <!-- Bootstrap Icons -->
+        <link
+            rel="stylesheet"
+            href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css"
+        />
+
+        <!-- Bootstrap JS for dropdown functionality -->
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+        <!-- HTMX event listener for plot updates -->
+        <script>
+            document.body.addEventListener("updatePlot", function (event) {
+                const plotData = event.detail;
+                if (document.getElementById("plotly-div") && plotData) {
+                    Plotly.react(
+                        "plotly-div",
+                        plotData.data,
+                        plotData.layout,
+                        plotData.config,
+                    );
+                }
+            });
+        </script>
+    </body>
 </html>
