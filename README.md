@@ -44,6 +44,28 @@ cargo build --release
 cargo install --path .
 ```
 
+### Docker Deployment
+
+For production deployment or containerized environments:
+
+```bash
+# Using Docker Compose (recommended)
+docker-compose up --build
+
+# Using Docker directly
+docker build -t fitrs-htmx-server .
+docker run -p 3001:3000 fitrs-htmx-server
+```
+
+**Docker Features:**
+- Multi-stage optimized builds
+- Non-root user security
+- Built-in health checks
+- Production-ready with Nginx reverse proxy
+- Kubernetes deployment support
+
+For detailed production configuration, monitoring, scaling, and troubleshooting, see the comprehensive Docker deployment guide.
+
 ## Quick Start
 
 ### 1. Generate Default Configuration
@@ -158,19 +180,46 @@ fit-rs --interactive
 - Refit with new parameters using `[f]`
 - Compare different parameter scenarios
 
-## Web API Server
+## Web Interface & API Server
 
-Start the web server for remote access:
+### HTMX Web Interface
+
+Launch the interactive web interface:
+```bash
+# Build and run the HTMX server
+cargo build --bin htmx-server
+cargo run --bin htmx-server
+```
+
+**Server URL**: `http://localhost:3001`
+
+**Features:**
+- **Drag-and-drop file upload**: CSV data and JSON configuration
+- **Interactive parameter editing**: Real-time form updates
+- **Live curve fitting**: HTMX-powered dynamic updates
+- **Responsive design**: Works on desktop and mobile
+- **Download results**: Export fitted parameters as CSV/JSON
+
+**Usage Workflow:**
+1. Upload CSV data file (concentration, response columns)
+2. Upload JSON configuration file or use defaults
+3. Adjust priors and MCMC settings in the web form
+4. Run curve fitting and view results
+5. Download results
+
+### API Server
+
+Start the JSON API server:
 ```bash
 fit-server
 ```
 
-### API Endpoints
+**API Endpoints:**
 - **POST /fit**: Upload CSV data and get fitted curves
-- **GET /health**: Health check
+- **GET /health**: Health check  
 - **POST /fit-with-config**: Fit with custom JSON configuration
 
-### Example Usage
+**Example Usage:**
 ```bash
 curl -X POST -F "file=@data.csv" http://localhost:3000/fit
 ```
